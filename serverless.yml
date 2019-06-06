@@ -1,0 +1,59 @@
+service: screenshot-maker
+
+provider:
+  name: aws
+  runtime: python3.6
+  region: eu-central-1
+  memorySize: 512
+  stage: 'dev'
+  environment:
+    BUCKET_NAME: 'sg-screenshots'
+    WEBDRIVER_SCREEN_WIDTH: 1920
+    WEBDRIVER_SCREEEN_HEIGHT: 1080
+    WEBDRIVER_TIMEOUT: 15
+    DYNAMODB_TABLE: ${self:custom.tableName}
+    DRIVER_LOC: 'bin1/chromedriver'
+    BROWSER_LOC: 'bin1/headless-chromium'
+
+  iamRoleStatements:
+    - Effect: "Allow"
+      Action: "s3:*" # TODO not safe
+      Resource: "*" # TODO not safe
+
+    - Effect: Allow
+      Action: "dynamodb:*"
+      Resource: "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.DYNAMODB_TABLE}"
+
+functions:
+  app:
+    handler: wsgi_handler.handler
+    events:
+      - http: ANY /
+      - http: 'ANY {proxy+}'
+    timeout: 20
+
+custom:
+  wsgi:
+    app: app.app
+    packRequirements: false
+  stage: ${opt:stage, self:provider.stage}
+  tableName: ${self:custom.stage}-data
+
+plugins:
+  - serverless-python-requirements
+  - serverless-wsgi
+resources:
+  Resources:
+    UrlsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.tableName}
+        AttributeDefinitions:
+          - AttributeName: target_url
+            AttributeType: S
+        KeySchema:
+          - AttributeName: target_url
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
